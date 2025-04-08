@@ -5,5 +5,5 @@ venv
 server/config.txt
 player_scores.json
 
-common/agents/*
 config.json
+common/agents/staff_*

@@ -40,13 +40,13 @@ class EventHandler:
                 # If the agent is dead and the space key is pressed, request a respawn
                 if event.key == pygame.K_SPACE:
                     if (
-                        self.client.agent.is_dead
-                        and self.client.agent.waiting_for_respawn
+                        self.client.is_dead
+                        and self.client.waiting_for_respawn
                     ):
                         # Set waiting for respawn explicitly when sending request
                         result = self.client.network.send_spawn_request()
                         if result:
-                            self.client.agent.waiting_for_respawn = True
+                            self.client.waiting_for_respawn = True
 
                 if self.game_mode == GameMode.MANUAL:
                     # Change the train's direction based on the pressed keys

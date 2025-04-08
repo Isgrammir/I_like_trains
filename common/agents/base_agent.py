@@ -19,8 +19,7 @@ class BaseAgent:
         self,
         nickname: str,
         network: NetworkManager,
-        logger: str = "client.agent",
-        is_dead: bool = True,
+        logger: str = "client.agent"
     ):
         """
         Initialize the base agent. Not supposed to be modified.
@@ -29,13 +28,8 @@ class BaseAgent:
             nickname (str): The name of the agent
             network (NetworkManager): The network object to handle communication
             logger (str): The logger name
-            is_dead (bool): Whether the agent is dead
 
         Attributes:
-            death_time (float): The time when the agent last died
-            respawn_cooldown (float): The cooldown time before respawning
-            is_dead (bool): Whether the agent is dead
-            waiting_for_respawn (bool): Whether the agent is waiting for respawn
             cell_size (int): The size of a cell in pixels
             game_width (int): The width of the game in cells
             game_height (int): The height of the game in cells
@@ -46,11 +40,6 @@ class BaseAgent:
         self.logger = logging.getLogger(logger)
         self.nickname = nickname
         self.network = network
-
-        self.death_time = time.time()
-        self.respawn_cooldown = 0
-        self.is_dead = is_dead
-        self.waiting_for_respawn = True
 
         # Game parameters, regularly updated by the client in handle_state_data() (see game_state.py)
         self.cell_size = None
@@ -73,15 +62,14 @@ class BaseAgent:
 
         Returning from this method without doing anything will cause the train to continue moving forward.
         """
-        if not self.is_dead:
-            new_direction = self.get_move()
-            if new_direction not in move.Move:
-                logging.error("get_move() did not return a valid move!")
-                return
+        new_direction = self.get_move()
+        if new_direction not in move.Move:
+            logging.error("get_move() did not return a valid move!")
+            return
 
-            if new_direction == move.Move.DROP:
-                self.network.send_drop_wagon_request()
-                return
+        if new_direction == move.Move.DROP:
+            self.network.send_drop_wagon_request()
+            return
 
-            if new_direction != self.all_trains[self.nickname]["direction"]:
-                self.network.send_direction_change(new_direction.value)
+        if new_direction != self.all_trains[self.nickname]["direction"]:
+            self.network.send_direction_change(new_direction.value)

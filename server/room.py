@@ -1,10 +1,11 @@
-from common.server_config import ServerConfig
-from server.game import Game
-import threading
-import time
 import json
 import logging
 import random
+import threading
+import time
+
+from common.server_config import ServerConfig
+from server.game import Game
 
 # Configure logger
 logger = logging.getLogger("server.room")
@@ -378,8 +379,13 @@ class Room:
         """Broadcast waiting room data to all clients"""
         last_update = time.time()
         while self.running and not self.stop_waiting_room:
-            # try:
             if self.clients and not self.game_thread:
+                if self.is_full():
+                    logger.info("Room is full. Starting game")
+                    self.add_all_trains()
+                    self.start_game()
+                    continue
+
                 current_time = time.time()
                 if (
                     current_time - last_update >= 1.0 / self.config.tick_rate
@@ -407,6 +413,7 @@ class Room:
                                 f"Waiting time expired for room {self.id}, adding bots and starting game"
                             )
                             self.fill_with_bots()
+                            self.add_all_trains()
                             self.start_game()
 
                     waiting_room_data = {
@@ -529,21 +536,45 @@ class Room:
         used_nicknames = set(self.clients.keys())
         for _ in range(nb_bots_needed):
             # We randomly chose an agent to use from agents in the config
-            # We create a new AI client with the chosen agent and increment the counter
-            # If the nickname is already use, we increment a counter
-            chosen_agent_index = random.randint(0, len(self.config.agents) - 1)
-            ai_agent_file_name = self.config.agents[chosen_agent_index].agent_file_name
+            # To avoid nickname collision, we append random numbers.
+            agent = random.choice(self.config.agents)
 
-            attempt_for_nickname = 0
-            nickname_already_in_use = True
-            while nickname_already_in_use:
-                ai_nickname = f"AI_{attempt_for_nickname}"
-                attempt_for_nickname += 1
-                if ai_nickname not in used_nicknames:
-                    nickname_already_in_use = False
+            ai_nickname = agent.nickname
+            while ai_nickname in used_nicknames:
+                r = random.randint(1, 999)
+                ai_nickname = f"{agent.nickname}-{r}"
 
             used_nicknames.add(ai_nickname)
-
             self.create_ai_for_train(
-                ai_nickname=ai_nickname, ai_agent_file_name=ai_agent_file_name
+                ai_nickname=ai_nickname, ai_agent_file_name=agent.agent_file_name
             )
+
+    def add_all_trains(self):
+        # Add trains for all the players
+        for nickname in self.get_players():
+            # Find the client address for this nickname
+            client_addr = None
+            for addr, name in self.clients.items():
+                if name == nickname:
+                    client_addr = addr
+                    break
+
+            if client_addr is None:
+                logger.warning(f"Could not find address for player {nickname}")
+                continue
+
+            if self.game.add_train(nickname):
+                response = {"type": "spawn_success", "nickname": nickname}
+                self.server_socket.sendto(
+                    (json.dumps(response) + "\n").encode(), client_addr
+                )
+            else:
+                logger.warning(f"Failed to spawn train {nickname}")
+                # Inform the client of the failure
+                response = {
+                    "type": "respawn_failed",
+                    "message": "Failed to spawn train",
+                }
+                self.server_socket.sendto(
+                    (json.dumps(response) + "\n").encode(), client_addr
+                )

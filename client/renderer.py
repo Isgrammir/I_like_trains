@@ -19,8 +19,6 @@ class Renderer:
         """Initialize renderer with a reference to the client"""
         self.client = client
         self.sorted_trains = []
-        # TODO(alok): delete self.manual_spawn, use self.client.config.manual_spawn instead
-        self.manual_spawn = self.client.config.manual_spawn
 
     def draw_game(self):
         """Draws the game."""
@@ -116,20 +114,17 @@ class Renderer:
             except Exception as e:
                 logger.error("Error drawing leaderboard: " + str(e))
 
-            if self.client.agent:
-                if self.client.agent.is_dead and not self.client.in_waiting_room:
-                    try:
-                        self.draw_death_screen()
-                    except Exception as e:
-                        logger.error("Error drawing death screen: " + str(e))
-
+            if self.client.is_dead and not self.client.in_waiting_room:
+                try:
+                    self.draw_death_screen()
+                except Exception as e:
+                    logger.error("Error drawing death screen: " + str(e))
+                
             # Update display
             pygame.display.flip()
-
         except Exception as e:
             logger.error("Error drawing game: " + str(e))
             import traceback
-
             logger.error(traceback.format_exc())
 
     def draw_delivery_zone(self):
@@ -384,8 +379,8 @@ class Renderer:
     def draw_death_screen(self):
         # If agent is dead, display respawn message with cooldown
 
-        elapsed = time.time() - self.client.agent.death_time
-        remaining_time = max(0, self.client.agent.respawn_cooldown - elapsed)
+        elapsed = time.time() - self.client.death_time
+        remaining_time = max(0, self.client.respawn_cooldown - elapsed)
 
         if remaining_time > 0:
             # Display cooldown
@@ -403,7 +398,7 @@ class Renderer:
             )
             self.client.screen.blit(text, text_rect)
 
-        elif self.client.agent.waiting_for_respawn and self.manual_spawn:
+        elif self.client.waiting_for_respawn and self.client.config.manual_spawn:
             # Display respawn message in center of screen
             font = pygame.font.Font(None, 28)
             text = font.render("Press SPACE to spawn", True, (0, 200, 0))

@@ -173,12 +173,6 @@ class Server:
                         message = json.loads(message_str)
                         # Process the message
                         self.process_message(message, addr)
-                        # except json.JSONDecodeError:
-                        #     logger.warning(
-                        #         f"Invalid JSON received from {addr}: {message_str}"
-                        #     )
-                        # except Exception as e:
-                        #     logger.error(f"Error processing message from {addr}: {e}")
             except socket.error as e:
                 # For UDP, we don't know which client caused the error
                 # So we only log the error and don't mark any client as disconnected
@@ -220,17 +214,17 @@ class Server:
             and "game_mode" in message
             and addr not in self.addr_to_name
         ):
-            if message["game_mode"] == "observer":
+            if message["game_mode"] != "observer":
                 # use handle_name_check and handle_sciper_check to check if the name and sciper are available
                 logger.debug(
                     f"Checking name and sciper availability for {message['nickname']} ({message['agent_sciper']})"
                 )
-                if self.handle_name_check(message, None) and self.handle_sciper_check(message, None):
+                if self.handle_name_check(message, addr) and self.handle_sciper_check(message, addr):
                     self.handle_new_client(message, addr)
-
-        self.client_last_activity[addr] = time.time()
-        if addr not in self.addr_to_sciper:  # Only handle if it's a new client address
-            self.handle_new_client(message, addr)
+            else:
+                self.client_last_activity[addr] = time.time()
+                self.handle_new_client(message, addr)
+                return
 
         # Handle ping responses for everyone
         if "type" in message and message["type"] == "pong":
@@ -260,16 +254,9 @@ class Server:
             client_room = self.find_client_room(agent_sciper)
             if client_room:
                 self.handle_client_message(addr, message, client_room)
-            # else:
-            #     logger.warning(
-            #         f"Received message from {addr} ({agent_sciper}) but client not in any room. Message: {message}"
-            #     )
         else:
-            # This is an unknown client sending a message that's not a common type
-            logger.debug(f"Received message from unknown client {addr}: {message}")
-            # Send a disconnect request to the client
-            self.send_disconnect(addr, "Unknown client")
-            logger.info(f"Sent disconnect request to unknown client {addr}")
+            self.handle_client_message(addr, message, None)
+            
 
     def send_disconnect(self, addr, message="Unknown client or invalid message format"):
         """Disconnect a client from the server"""
@@ -418,12 +405,12 @@ class Server:
             # Prepare the response with best score if available
             response = {"type": "sciper_check", "available": sciper_available}
 
-            # Include best score if the player has played before
-            if sciper_to_check in self.best_scores:
-                response["best_score"] = self.best_scores[sciper_to_check]
-                logger.info(
-                    f"Player with sciper '{sciper_to_check}' has a best score of {self.best_scores[sciper_to_check]}"
-                )
+            # # Include best score if the player has played before
+            # if sciper_to_check in self.best_scores:
+            #     response["best_score"] = self.best_scores[sciper_to_check]
+            #     logger.info(
+            #         f"Player with sciper '{sciper_to_check}' has a best score of {self.best_scores[sciper_to_check]}"
+            #     )
 
             try:
                 self.server_socket.sendto((json.dumps(response) + "\n").encode(), addr)
@@ -442,6 +429,8 @@ class Server:
         agent_sciper = message.get("agent_sciper", "")
         game_mode = message.get("game_mode", "")
 
+        logger.debug(f"Received agent ids: {nickname}, {agent_sciper}, {game_mode}")
+
         if game_mode == "observer":
             logger.info(f"New client connected in OBSERVER mode: {addr}")
             self.client_last_activity[addr] = time.time()
@@ -449,6 +438,12 @@ class Server:
             # generate a random name and sciper
             nickname = f"Observer_{random.randint(1000, 9999)}"
             agent_sciper = str(random.randint(100000, 999999))
+
+        # Associate address with name and sciper
+        self.addr_to_name[addr] = nickname
+        self.addr_to_sciper[addr] = agent_sciper
+        self.addr_to_game_mode[addr] = game_mode
+        self.sciper_to_addr[agent_sciper] = addr
 
         # else:
         if not nickname:
@@ -492,12 +487,6 @@ class Server:
                     del self.client_last_activity[old_addr]
                 if old_addr in self.ping_responses:
                     del self.ping_responses[old_addr]
-
-        # Associate address with name and sciper
-        self.addr_to_name[addr] = nickname
-        self.addr_to_sciper[addr] = agent_sciper
-        self.addr_to_game_mode[addr] = game_mode
-        self.sciper_to_addr[agent_sciper] = addr
 
         # Remove from disconnected_clients if present (just in case)
         if addr in self.disconnected_clients:
@@ -552,11 +541,25 @@ class Server:
         }
         self.server_socket.sendto((json.dumps(game_status) + "\n").encode(), addr)
 
-    def handle_client_message(self, addr, message, room):
+    def handle_client_message(self, addr, message, room=None):
         """Handles messages received from the client"""
         try:
             # Update client activity timestamp
 
+            if room is None:
+                # If room is None, we can't handle most messages
+                if message.get("action") == "check_name":
+                    self.handle_name_check(message, addr)
+                    return
+                
+                if message.get("action") == "check_sciper":
+                    self.handle_sciper_check(message, addr)
+                    return
+                
+                # For other message types, we need a valid room
+                logger.debug(f"Ignoring message from client {addr} as they are not in any room: {message}")
+                return
+                
             nickname = room.clients.get(addr)
             if message.get("action") == "check_name":
                 self.handle_name_check(message, addr)
@@ -610,8 +613,6 @@ class Server:
             elif message.get("action") == "direction":
                 if nickname in room.game.trains and room.game.is_train_alive(nickname):
                     room.game.trains[nickname].change_direction(message["direction"])
-                # else:
-                #     logger.warning(f"Failed to change direction for train {nickname}")
 
             elif message.get("action") == "drop_wagon":
                 if nickname in room.game.trains and room.game.is_train_alive(nickname):
@@ -643,9 +644,9 @@ class Server:
                         )
 
             # For high scores request
-            if "type" in message and message["type"] == "high_scores":
-                self.handle_high_scores_request(addr)
-                return
+            # if "type" in message and message["type"] == "high_scores":
+            #     self.handle_high_scores_request(addr)
+            #     return
 
         except Exception as e:
             logger.error(f"Error handling client message: {e}")

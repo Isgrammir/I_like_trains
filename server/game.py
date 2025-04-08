@@ -234,6 +234,7 @@ class Game:
 
     def add_train(self, nickname):
         """Add a new train to the game"""
+        logger.debug(f"Adding train {nickname}")
         # Check the cooldown
         if nickname in self.dead_trains:
             elapsed = time.time() - self.dead_trains[nickname]
@@ -286,10 +287,10 @@ class Game:
                 # Get the client object
                 client = self.ai_clients[nickname]
                 # Change the train's state
-                client.agent.is_dead = True
-                client.agent.death_time = time.time()
-                client.agent.waiting_for_respawn = True
-                client.agent.respawn_cooldown = self.config.respawn_cooldown_seconds
+                client.is_dead = True
+                client.death_time = time.time()
+                client.waiting_for_respawn = True
+                client.respawn_cooldown = self.config.respawn_cooldown_seconds
         else:
             logger.error(f"Train {nickname} not found in game")
             return False

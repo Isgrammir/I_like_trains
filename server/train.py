@@ -31,6 +31,7 @@ BOOST_INTENSITY = 1.5  # Intensity of speed boost
 
 class Train:
     def __init__(self, x, y, nickname, color, handle_train_death, tick_rate):
+        logger.debug(f"Creating train {nickname} at position {x}, {y}")
         self.position = (x, y)
         self.wagons = []
         self.new_direction = Move.RIGHT.value
@@ -296,6 +297,7 @@ class Train:
     def set_alive(self, alive):
         """Update train alive status"""
         if self.alive != alive:
+            logger.debug(f"Train {self.nickname} is dead: {not alive}")
             self.alive = alive
             self._dirty["alive"] = True
 

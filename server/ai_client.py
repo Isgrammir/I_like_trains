@@ -75,6 +75,11 @@ class AIClient:
         self.game = room.game
         self.nickname = nickname  # The AI agent name
         self.nickname = nickname  # Use the AI name as the train name
+        
+        self.is_dead = False
+        self.waiting_for_respawn = False
+        self.death_time = 0
+        self.respawn_cooldown = 0
 
         # Create network interface
         self.network = AINetworkInterface(
@@ -95,7 +100,7 @@ class AIClient:
 
                 module = importlib.import_module(module_path)
                 self.agent = module.Agent(
-                    nickname, self.network, logger="server.ai_agent", is_dead=False
+                    nickname, self.network, logger="server.ai_agent"
                 )
                 logger.info(
                     f"AI agent {nickname} initialized using {ai_agent_file_name}"
@@ -108,7 +113,7 @@ class AIClient:
                 logger.info(f"Trying to import AI agent for {nickname}")
                 module = importlib.import_module("common.agents.ai_agent")
                 self.agent = module.AI_agent(
-                    nickname, self.network, logger="server.ai_agent", is_dead=False
+                    nickname, self.network, logger="server.ai_agent"
                 )
                 logger.info(f"AI agent {nickname} initialized using AI_agent")
             except ImportError as e:
@@ -167,15 +172,16 @@ class AIClient:
             self.agent.game_width = self.game_width
             self.agent.game_height = self.game_height
 
-            self.agent.update_agent()
+            if not self.is_dead:
+                self.agent.update_agent()
 
             # Add automatic respawn logic
             if (
                 not self.game.trains[self.nickname].alive
-                and self.agent.waiting_for_respawn
+                and self.waiting_for_respawn
             ):
-                elapsed = time.time() - self.agent.death_time
-                if elapsed >= self.agent.respawn_cooldown:
+                elapsed = time.time() - self.death_time
+                if elapsed >= self.respawn_cooldown:
                     logger.debug(
                         f"AI client {self.nickname} respawn cooldown over, checking game state"
                     )
@@ -195,8 +201,8 @@ class AIClient:
                     cooldown = self.room.game.get_train_cooldown(self.nickname)
                     if cooldown <= 0:
                         self.room.game.add_train(self.nickname)
-                        self.agent.waiting_for_respawn = False
-                        self.agent.is_dead = False
+                        self.waiting_for_respawn = False
+                        self.is_dead = False
                         logger.info(f"AI client {self.nickname} respawned")
 
             # else:

@@ -28,7 +28,6 @@ class Client:
 
     def __init__(self, config: Config):
         """Initialize the client"""
-
         self.config = config.client
         self.game_mode = self.config.game_mode
 
@@ -40,6 +39,10 @@ class Client:
 
         # Initialize state variables
         self.running = True
+        self.is_dead = False
+        self.waiting_for_respawn = False
+        self.death_time = 0
+        self.respawn_cooldown = 0
         self.is_initialized = False
         self.in_waiting_room = True
         self.lock = threading.Lock()
@@ -104,11 +107,15 @@ class Client:
 
         # Initialize agent based on game mode
         self.agent = None
+
+        logger.debug("Initialized client")
+
         if self.game_mode != GameMode.OBSERVER:
+            logger.debug("Initializing agent")
             agent_info = self.config.agent
-            if agent_info and "agent_file_name" in agent_info:
-                logger.info(f"Loading agent: {agent_info['agent_file_name']}")
-                agent_file_name = agent_info["agent_file_name"]
+            if agent_info and hasattr(agent_info, "agent_file_name"):
+                logger.info(f"Loading agent: {agent_info.agent_file_name}")
+                agent_file_name = agent_info.agent_file_name
                 if agent_file_name.endswith(".py"):
                     # Remove .py extension
                     agent_file_name = agent_file_name[:-3]
@@ -117,15 +124,11 @@ class Client:
                 module_path = f"common.agents.{agent_file_name}"
                 logger.info(f"Importing module: {module_path}")
 
-                try:
-                    # Add parent directory to Python path to allow importing agents package
-                    module = importlib.import_module(module_path)
-                    self.nickname = agent_info["nickname"]
-                    # self.agent_sciper = agent_info["sciper"]
-                    self.agent = module.Agent(self.nickname, self.network)
-                except Exception as e:
-                    logger.error(f"Error importing agent module: {e}")
-                    raise e
+                # Add parent directory to Python path to allow importing agents package
+                module = importlib.import_module(module_path)
+                self.nickname = agent_info.nickname
+                # self.agent_sciper = agent_info["sciper"]
+                self.agent = module.Agent(self.nickname, self.network)
 
         self.ping_response_received = False
         self.server_disconnected = False
@@ -212,9 +215,21 @@ class Client:
             logger.error(f"Error creating login window: {e}")
             return
 
+        if self.game_mode == GameMode.AGENT:
+            nickname = self.config.agent.nickname
+            sciper = self.config.sciper
+        elif self.game_mode == GameMode.MANUAL:
+            nickname = self.config.manual.nickname
+            sciper = self.config.sciper
+        else:
+            nickname = ""
+            sciper = ""
+        
+        logger.debug(f"Sending agent ids: {nickname}, {sciper}, {self.game_mode.value}")
+
         if not self.network.send_agent_ids(
-            self.config.agent.nickname if self.game_mode == GameMode.AGENT else self.config.manual.nickname if self.game_mode == GameMode.MANUAL else "",
-            self.config.sciper if self.game_mode != GameMode.OBSERVER else "",
+            nickname,
+            sciper,
             self.game_mode.value
         ):
             logger.error("Failed to send agent ids to server")
@@ -229,19 +244,18 @@ class Client:
             # Handle any pending window updates in the main thread
             self.handle_window_updates()
 
-            # If no agent is set, skip the rest of the loop
-            if self.agent:
-                # Add automatic respawn logic
-                if (
-                    not self.config.manual_spawn
-                    and self.agent.is_dead
-                    and self.agent.waiting_for_respawn
-                    and not self.game_over
-                ):
-                    elapsed = time.time() - self.agent.death_time
-                    if elapsed >= self.agent.respawn_cooldown:
-                        self.network.send_spawn_request()
-
+            # Add automatic respawn logic
+            if (
+                not self.config.manual_spawn
+                and self.is_dead
+                and self.waiting_for_respawn
+                and not self.game_over
+            ):
+                elapsed = time.time() - self.death_time
+                if elapsed >= self.respawn_cooldown:
+                    logger.debug("Sending spawn request.")
+                    self.network.send_spawn_request()
+   
             self.renderer.draw_game()
 
             # Limit FPS

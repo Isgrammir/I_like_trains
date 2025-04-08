@@ -3,7 +3,11 @@
         "host": "127.0.0.1",
         "port": 5555,
         "manual_spawn": false,
+<<<<<<< HEAD
         "game_mode": "observer",
+=======
+        "game_mode": "agent",
+>>>>>>> 62785c81e8a4c45cb0aa58c7dfd7a4dd4c4cc6c9
         "sciper": "000000",
         "agent": {
             "nickname": "Player1",
