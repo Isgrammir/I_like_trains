@@ -16,6 +16,6 @@ class Agent(BaseAgent):
 
         This method must return one of moves.MOVE
         """
-
+        print(f"self.all_trains{self.all_trains}")
         moves = [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]
         return random.choice(moves)
